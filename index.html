@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ContrastFour — four-bar contrast desk</title>
+  <meta name="description" content="Four live-instrument bars that break the loop with reduced density and new color so form can move." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<main>
+  <p class="eyebrow">WorkinWithAI · live chairs</p>
+  <h1>ContrastFour</h1>
+  <p class="lead">Four-bar contrast desk. Producers stuck in the 8-bar loop. Session players write four bars of reduced density, held bass, and a new color (violin or trumpet) so the repetition has a door. Live piano, upright, nylon, kit, trumpet, violin. Not a lift. Not a tag. Not a key change.</p>
+  <p class="status" id="status">Tap to start audio…</p>
+  <p class="eyebrow">Groove</p>
+  <div class="row" id="grooves"></div>
+  <p class="eyebrow">Contrast</p>
+  <div class="row" id="recipes"></div>
+  <p class="eyebrow">Form · loop 1–4 · contrast 5–8 · return 9–12</p>
+  <div class="bars" id="bars"></div>
+  <h2>Punch list</h2>
+  <pre id="punch"></pre>
+  <label>BPM <input id="bpm" type="number" min="60" max="180" value="92" /></label>
+  <label>Key <select id="key"><option>A minor</option><option>C major</option><option>E minor</option></select></label>
+</main>
+<div class="dock">
+  <button id="playA">A · Loop</button>
+  <button id="playB">B · Full form</button>
+  <button id="play8">8 · Contrast only</button>
+  <button class="ghost" id="stop">Stop</button>
+  <button class="ghost" id="copy">Copy punch</button>
+  <button class="ghost" id="export">Export WAV</button>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
