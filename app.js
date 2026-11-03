@@ -6,6 +6,7 @@ const LOOP = 4;
 const CONTRAST = 4;
 const RETURN = 4;
 const TOTAL = LOOP + CONTRAST + RETURN;
+const SAMPLE_RATE = 48000;
 
 const recipes = [
   { id:"thin-kit", name:"Thin kit", blurb:"Hats and kick drop for four bars. Violin holds a color." },
@@ -33,8 +34,8 @@ const state = {
   playing: false,
   bar: 0,
   mode: null,
-  bpm: 92,
-  key: "A minor",
+  bpm: Number(localStorage.getItem("contrastfour-bpm")) || 92,
+  key: localStorage.getItem("contrastfour-key") || "A minor",
   muted: {}
 };
 
@@ -42,7 +43,7 @@ let ctx, bus, master, compressor, buffers = {}, rawBuffers = {}, activeSources =
 
 async function ensureContext() {
   if (!ctx) {
-    ctx = new AudioContext();
+    ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     master = ctx.createGain();
     master.gain.value = 0.7;
     compressor = ctx.createDynamicsCompressor();
@@ -106,13 +107,18 @@ function playBuf(name, when, rate = 1, gain = 0.35, dur = null) {
   g.gain.setValueAtTime(0, when);
   g.gain.linearRampToValueAtTime(gain, when + 0.01);
   if (dur) {
-    g.gain.setValueAtTime(gain, when + dur - 0.02);
+    g.gain.setValueAtTime(gain, when + Math.max(0, dur - 0.02));
     g.gain.linearRampToValueAtTime(0, when + dur);
+  } else {
+    // short release for one-shots
+    g.gain.setValueAtTime(gain, when + 0.05);
+    g.gain.linearRampToValueAtTime(0, when + 0.15);
   }
   src.connect(g);
   g.connect(bus);
   src.start(when);
   if (dur) src.stop(when + dur + 0.05);
+  else src.stop(when + 0.2);
   activeSources.push(src);
   return src;
 }
@@ -150,23 +156,24 @@ function scheduleStep(stepIndex, time) {
 
   if (s === 0) {
     const pGain = onContrast && (rec === "thin-kit" || rec === "nylon-space") ? 0.15 : 0.26;
-    playBuf("pC4", time, rateFromMidi(ch.piano[2] || 60, 60), pGain);
-    playBuf("pA3", time, rateFromMidi(ch.piano[1] || 57, 57), pGain * 0.7);
+    playBuf("pC4", time, rateFromMidi(ch.piano[2] || 60, 60), pGain, 0.9);
+    playBuf("pA3", time, rateFromMidi(ch.piano[1] || 57, 57), pGain * 0.7, 0.9);
   }
 
   if (s === 0) {
-    playBuf("bA1", time, rateFromMidi(ch.bass, 33), onContrast && rec === "held-bass" ? 0.5 : 0.42);
+    const bGain = onContrast && rec === "held-bass" ? 0.5 : 0.42;
+    playBuf("bA1", time, rateFromMidi(ch.bass, 33), bGain, onContrast && rec === "held-bass" ? 1.8 : 0.9);
   }
 
   if (s === 0 && !(onContrast && rec === "nylon-space")) {
-    playBuf("gA2", time, rateFromMidi(ch.guitar[0] || 45, 45), 0.22);
+    playBuf("gA2", time, rateFromMidi(ch.guitar[0] || 45, 45), 0.22, 0.8);
   }
 
   if (onContrast && rec === "thin-kit" && s === 0) {
     playBuf("vA3", time, rateFromMidi(ch.piano[2] || 60, 57), 0.22, 1.8);
   }
   if (onContrast && rec === "held-bass" && barIndex === LOOP + 2 && s === 8) {
-    playBuf("tC4", time, rateFromMidi(ch.piano[3] || 69, 60), 0.32);
+    playBuf("tC4", time, rateFromMidi(ch.piano[3] || 69, 60), 0.32, 0.6);
   }
 }
 
@@ -205,7 +212,8 @@ function stop() {
 
 function updatePlayhead() {
   if (!state.playing || !ctx) return;
-  const currentStep = step;
+  const elapsed = ctx.currentTime - (nextStepTime - (step * (60 / state.bpm / 4)));
+  const currentStep = Math.floor(elapsed / (60 / state.bpm / 4)) % (state.bars || TOTAL * STEPS);
   const barIndex = Math.floor(currentStep / STEPS) % TOTAL;
   if (barIndex !== state.bar) {
     state.bar = barIndex;
@@ -229,7 +237,7 @@ function paintGrooves() {
     const b = document.createElement("button");
     b.className = "card" + (state.groove.id === g.id ? " on" : "");
     b.innerHTML = `<b>${g.name}</b><span>${g.bpm} BPM · ${g.key}</span>`;
-    b.onclick = () => { state.groove = g; state.bpm = g.bpm; document.getElementById("bpm").value = g.bpm; render(); };
+    b.onclick = () => { state.groove = g; state.bpm = g.bpm; document.getElementById("bpm").value = g.bpm; localStorage.setItem("contrastfour-bpm", state.bpm); render(); };
     el.appendChild(b);
   });
 }
@@ -259,17 +267,138 @@ function paintBars() {
 
 function render() { paintGrooves(); paintRecipes(); paintBars(); document.getElementById("punch").textContent = punch(); }
 
+// Persistence
+document.getElementById("bpm").value = state.bpm;
+document.getElementById("key").value = state.key;
+document.getElementById("bpm").onchange = e => { state.bpm = Number(e.target.value); localStorage.setItem("contrastfour-bpm", state.bpm); };
+document.getElementById("key").onchange = e => { state.key = e.target.value; localStorage.setItem("contrastfour-key", state.key); render(); };
+
 document.getElementById("playA").onclick = () => start("loop");
 document.getElementById("playB").onclick = () => start("cut");
 document.getElementById("play8").onclick = () => start("eight");
 document.getElementById("stop").onclick = stop;
 document.getElementById("copy").onclick = () => navigator.clipboard.writeText(punch());
-document.getElementById("bpm").onchange = e => { state.bpm = Number(e.target.value); };
-document.getElementById("key").onchange = e => { state.key = e.target.value; render(); };
 
-document.getElementById("export").onclick = async () => {
-  alert("WAV export: 48 kHz 24-bit, exact bar length, first transient at sample 0, tail folded. See acceptance checks in README.");
-};
+async function exportWAV() {
+  if (!buffers.kick) await load();
+  const bars = TOTAL;
+  const bpm = state.bpm;
+  const lengthSamples = Math.round(bars * 4 * 60 / bpm * SAMPLE_RATE);
+  const offline = new OfflineAudioContext(2, lengthSamples + SAMPLE_RATE, SAMPLE_RATE); // extra for tail
+  // Reuse rawBuffers and decode into offline
+  const offBuffers = {};
+  for (const [k, ab] of Object.entries(rawBuffers)) {
+    offBuffers[k] = await offline.decodeAudioData(ab.slice(0));
+  }
+  function offPlay(name, when, rate, gain, dur) {
+    const b = offBuffers[name];
+    if (!b) return;
+    const src = offline.createBufferSource();
+    src.buffer = b;
+    src.playbackRate.value = rate;
+    const g = offline.createGain();
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(gain, when + 0.01);
+    if (dur) {
+      g.gain.setValueAtTime(gain, when + Math.max(0, dur - 0.02));
+      g.gain.linearRampToValueAtTime(0, when + dur);
+    }
+    src.connect(g);
+    g.connect(offline.destination);
+    src.start(when);
+    if (dur) src.stop(when + dur + 0.05);
+  }
+  // Schedule all steps offline
+  let t = 0;
+  for (let st = 0; st < bars * STEPS; st++) {
+    const barIndex = Math.floor(st / STEPS) % TOTAL;
+    const s = st % STEPS;
+    const ch = chordAt(barIndex);
+    const z = zone(barIndex);
+    const rec = state.recipe.id;
+    const onContrast = z === "contrast";
+    if (s % 2 === 0 && !(onContrast && (rec === "thin-kit" || rec === "stop-two"))) offPlay("hat", t, 1, 0.06);
+    if (s === 0 && !(onContrast && rec === "stop-two" && barIndex > LOOP)) offPlay("kick", t, 1, 0.65);
+    if (s === 8 && !onContrast) offPlay("snare", t, 1, 0.4);
+    if (s === 0) {
+      const pGain = onContrast && (rec === "thin-kit" || rec === "nylon-space") ? 0.15 : 0.26;
+      offPlay("pC4", t, rateFromMidi(ch.piano[2] || 60, 60), pGain, 0.9);
+      offPlay("pA3", t, rateFromMidi(ch.piano[1] || 57, 57), pGain * 0.7, 0.9);
+    }
+    if (s === 0) {
+      const bGain = onContrast && rec === "held-bass" ? 0.5 : 0.42;
+      offPlay("bA1", t, rateFromMidi(ch.bass, 33), bGain, onContrast && rec === "held-bass" ? 1.8 : 0.9);
+    }
+    if (s === 0 && !(onContrast && rec === "nylon-space")) offPlay("gA2", t, rateFromMidi(ch.guitar[0] || 45, 45), 0.22, 0.8);
+    if (onContrast && rec === "thin-kit" && s === 0) offPlay("vA3", t, rateFromMidi(ch.piano[2] || 60, 57), 0.22, 1.8);
+    if (onContrast && rec === "held-bass" && barIndex === LOOP + 2 && s === 8) offPlay("tC4", t, rateFromMidi(ch.piano[3] || 69, 60), 0.32, 0.6);
+    t += 60 / bpm / 4;
+  }
+  const rendered = await offline.startRendering();
+  // Fold tail onto start for seamless loop
+  const tailLen = SAMPLE_RATE; // 1s tail
+  const mainLen = lengthSamples;
+  const folded = offline.createBuffer(2, mainLen, SAMPLE_RATE);
+  for (let c = 0; c < 2; c++) {
+    const srcData = rendered.getChannelData(c);
+    const dest = folded.getChannelData(c);
+    dest.set(srcData.subarray(0, mainLen));
+    for (let i = 0; i < tailLen && i < srcData.length - mainLen; i++) {
+      dest[i] += srcData[mainLen + i];
+    }
+  }
+  // Peak normalize to -1 dBFS
+  let peak = 0;
+  for (let c = 0; c < 2; c++) {
+    const d = folded.getChannelData(c);
+    for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  }
+  const scale = peak > 0 ? Math.pow(10, -1 / 20) / peak : 1;
+  for (let c = 0; c < 2; c++) {
+    const d = folded.getChannelData(c);
+    for (let i = 0; i < d.length; i++) d[i] *= scale;
+  }
+  // Encode 24-bit WAV
+  const wav = encodeWAV(folded, SAMPLE_RATE);
+  const name = `contrastfour-${state.recipe.id}-${bpm}bpm-${state.key.replace(/ /g,"")}.wav`;
+  download(wav, name, "audio/wav");
+  // Simple MIDI stub (full multi-track would be more involved)
+  const mid = new Blob(["MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\x80MTrk\x00\x00\x00\x04\x00\xFF\x2F\x00"], {type: "audio/midi"});
+  download(mid, name.replace(".wav",".mid"), "audio/midi");
+  document.getElementById("status").textContent = `Exported ${name} (${mainLen} samples)`;
+}
+
+function encodeWAV(buffer, rate) {
+  const numCh = buffer.numberOfChannels;
+  const len = buffer.length;
+  const ab = new ArrayBuffer(44 + len * numCh * 3);
+  const view = new DataView(ab);
+  const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  writeStr(0, "RIFF"); view.setUint32(4, 36 + len * numCh * 3, true); writeStr(8, "WAVE");
+  writeStr(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numCh, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * numCh * 3, true); view.setUint16(32, numCh * 3, true); view.setUint16(34, 24, true);
+  writeStr(36, "data"); view.setUint32(40, len * numCh * 3, true);
+  let offset = 44;
+  for (let i = 0; i < len; i++) {
+    for (let c = 0; c < numCh; c++) {
+      let sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i]));
+      sample = sample < 0 ? sample * 0x800000 : sample * 0x7FFFFF;
+      view.setUint8(offset, sample & 0xff); view.setUint8(offset+1, (sample >> 8) & 0xff); view.setUint8(offset+2, (sample >> 16) & 0xff);
+      offset += 3;
+    }
+  }
+  return new Blob([ab], {type: "audio/wav"});
+}
+
+function download(blob, name, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById("export").onclick = exportWAV;
 
 render();
 document.getElementById("status").textContent = "Tap any play button to start audio";

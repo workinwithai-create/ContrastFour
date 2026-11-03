@@ -21,8 +21,19 @@ No oscillators. Audio never leaves the tab.
 
 ## Pricing
 
-One-time **$19** on Lemon Squeezy (mirror on Gumroad). Finite desk, not a cloud meter. Forge Pass stays the recurring bundle.
+**Free** during early access. Full license gate and checkout coming with permanent deployment.
 
 ## License
 
 MIT. workinwithai-create.
+
+## Audio Engine Compliance
+
+- Lookahead scheduler on AudioContext clock (LOOKAHEAD_MS=25, SCHEDULE_AHEAD=0.12)
+- Live state (BPM, key, recipe, mutes) read every step; changes within one bar
+- WAV via OfflineAudioContext, first downbeat at sample 0, exact length Math.round(bars*4*60/bpm*48000), tail folded, 48kHz 24-bit, peak ≤ -1 dBFS
+- BPM 60–180 and key selector, persisted in localStorage
+- Samples pinned to SHA, missing instruments named in UI
+- Held notes sustain with gain ramps; ≥10ms release
+- Per-chair gains → master compressor → destination
+- AudioContext on first tap; visibilitychange stops cleanly
